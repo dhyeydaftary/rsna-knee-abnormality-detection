@@ -28,46 +28,84 @@ unless there is a genuine technical reason.
   report text is limited to training-time label derivation/weak
   supervision — it cannot be a runtime model input.
 
-## Dataset Structure (confirmed from the official data description, 27 Aug 2026)
+## Dataset Structure (confirmed from official documentation, verified against actual data via `notebooks/02_data_exploration.ipynb`, 27 Aug 2026)
 
-- **`train.csv`** — one row per study: `StudyInstanceUID`, `Report`
-  (free-text radiology report, multiple languages depending on reporting
-  institution), and the 12 binary (0/1) labels.
-- **`train_series.csv`** — one row per series: `StudyInstanceUID`,
-  `SeriesInstanceUID`, `Fluid_Sensitive` (0/1), `Fat_Suppression` (0/1, not
-  always equivalent to `Fluid_Sensitive`), `Anatomical_Plane` (Sagittal /
-  Coronal / Axial).
+- **`train.csv`** — 4,407 rows: `StudyInstanceUID`, `Report` (free-text
+  radiology report, multiple languages depending on reporting institution),
+  and the 12 binary (0/1) labels. Zero duplicate `StudyInstanceUID`.
+- **`train_series.csv`** — 24,371 rows: `StudyInstanceUID`,
+  `SeriesInstanceUID`, `Fluid_Sensitive` (0/1), `Fat_Suppression` (0/1),
+  `Anatomical_Plane` (Sagittal / Coronal / Axial). Zero duplicate
+  `SeriesInstanceUID`, zero orphan records against `train.csv` in either
+  direction.
 - **`train_series/`** — DICOMs at
   `train_series/<StudyInstanceUID>/<SeriesInstanceUID>/<SOPInstanceUID>.dcm`,
   one slice per file. Series typically have 20–45 slices (median 30), long
-  tail out to a few hundred.
-- **`test.csv`** — ~1,300 studies at scoring time; example file has 3.
-  `StudyInstanceUID` only — **no `Report` field.**
-- **`test_series.csv` / `test_series/`** — same schema as train, swapped
-  for real data during scoring.
-- **`sample_submission.csv`** — all label columns set to 0.5. Verified
-  against an actual copy: 13 columns, header and order match exactly,
-  `StudyInstanceUID` values are genuine DICOM UIDs.
-- **Label coverage:** only a small subset of training studies carry direct
-  per-condition labels; the rest have only a report, from which labels may
-  need to be derived. This is a weak-supervision problem, not plain
-  supervised multilabel classification. Exact counts still to be measured
-  from our own copy of `train.csv`.
+  tail out to a few hundred. **Not yet inspected directly** — pending
+  `03_dicom_exploration.ipynb`.
+- **`test.csv`** — ~1,300 studies at scoring time; example file currently
+  has 3, no `Report` field. Zero overlap with training `StudyInstanceUID`s.
+- **`test_series.csv` / `test_series/`** — same schema as train (schema
+  match confirmed), swapped for real data during scoring.
+- **`sample_submission.csv`** — verified: 13 columns, header/order match
+  exactly, all values 0.5, `StudyInstanceUID` values are genuine DICOM UIDs.
+- **Label coverage — exact numbers confirmed:** 58 of 4,407 studies (1.3%)
+  have all 12 labels populated; the remaining 4,349 (98.7%) have all 12
+  labels null. **This split is entirely all-or-nothing — zero partially
+  labeled studies exist.** This is a weak-supervision problem, not plain
+  supervised multilabel classification.
+- **Per-target prevalence within the 58-study labeled subset** (small-n,
+  treat as a rough shape indicator, not a reliable population statistic):
+  Effusion 60.3%, Synovitis 46.6%, Medial Meniscus 44.8%, ACL 41.4%, Lateral
+  Meniscus 39.7%, PF OA 36.2%, Contusion 32.8%, Fracture 31.0%, Medial OA
+  25.9%, Baker's 20.7%, Lateral OA 19.0%, MCL 15.5%. Median 4 positive
+  findings per labeled study (range 1–9) — genuinely multilabel.
+- **Series structure confirmed:** 3–14 series per study (median 5, mean
+  5.53). All 4,407 training studies contain all three anatomical planes
+  (Sagittal, Coronal, Axial) — zero exceptions.
+- **`Fluid_Sensitive` / `Fat_Suppression` — documentation discrepancy
+  noted:** the data description states these are "not necessarily
+  equivalent for every case," but in this copy of the training data they
+  are perfectly correlated across all 24,371 series (zero mixed cases).
+  Not a contradiction — the documentation only says they're not
+  *guaranteed* equivalent — but no divergent case has been observed yet.
+  Keeping both columns; not dropping either.
+- **131 exact-duplicate reports** identified in `train.csv`. Not yet
+  investigated further; flagged as relevant to the future weak-label
+  generation stage.
 - **Distribution shift risk:** abnormality prevalence is not guaranteed to
   be the same across train, public leaderboard, and final evaluation sets —
   relevant to validation-strategy design.
-- **DICOM notes:** intensities, orientations, and resolutions vary across
-  series/studies. Transfer syntaxes vary (uncompressed Explicit VR LE, JPEG
-  Lossless, JPEG 2000, Implicit VR LE) — the DICOM reader needs
-  `pylibjpeg`/`gdcm`-level decompression support, not just plain `pydicom`.
-  Metadata has been stripped to an allowlisted set of 86 tags.
+- **DICOM notes (from documentation, not yet directly verified):**
+  intensities, orientations, and resolutions vary across series/studies.
+  Transfer syntaxes vary (uncompressed Explicit VR LE, JPEG Lossless, JPEG
+  2000, Implicit VR LE) — the DICOM reader needs `pylibjpeg`/`gdcm`-level
+  decompression support, not just plain `pydicom`. Metadata has been
+  stripped to an allowlisted set of 86 tags.
 
 **Open sub-question on task framing:** three targets (Medial OA, Lateral OA,
 PF OA) are laterality-specific by name; the other nine are not, and there is
-no laterality field in `train_series.csv`. The absence of a laterality
-column is circumstantial evidence that each study represents a single knee,
-but this has not been explicitly confirmed — check by inspecting a handful
-of actual studies.
+no laterality field in `train_series.csv`. Report-text spot-checks show
+explicit single-knee language (e.g. "MRI of left Knee," German "Rechts" =
+right) in a minority of reports, and only 15 of 4,407 reports mention both
+"left" and "right" — weak circumstantial evidence toward "each study = one
+knee," but not confirmed. Requires DICOM-level inspection.
+
+## Validation Feasibility (confirmed via `notebooks/02_data_exploration.ipynb`, 27 Aug 2026)
+
+**No patient, site, institution, or scanner identifier column exists in any
+of the five tabular files** — confirmed by an exhaustive column-name search
+across `train.csv`, `train_series.csv`, `test.csv`, `test_series.csv`, and
+`sample_submission.csv`. `StudyInstanceUID` is the only available grouping
+key in the tabular data. Whether the same patient can appear across
+multiple studies cannot currently be determined.
+
+**This is a hard dependency for `03_dicom_exploration.ipynb`, not an
+optional nice-to-have.** If DICOM headers also carry no patient/site
+identifier (plausible, given the 86-tag metadata allowlist), the project
+will need to explicitly accept an unresolved leakage risk or fall back to
+non-grouped validation — and that limitation should be stated openly in any
+writeup rather than assumed away.
 
 ## Rules and Constraints (confirmed, 27 Aug 2026)
 
@@ -162,33 +200,50 @@ of actual studies.
 - Work branches: `feature/...`, `chore/...`, `fix/...` or `bug/...`, `hotfix/...`, branched from `dev`, merged back into `dev`.
 - Commit format: Conventional Commits, e.g. `feat(data): add initial DICOM metadata inspection`.
 
+## Data Location (not committed — see `.gitignore`)
+
+Competition CSVs live in `data/` at the repo root (`data/train.csv`,
+`data/train_series.csv`, `data/test.csv`, `data/test_series.csv`,
+`data/sample_submission.csv`). DICOM folders (`data/train_series/`,
+`data/test_series/`) go in the same location once downloaded. `data/` is
+gitignored and must stay that way — Section 2.4.b of the official rules
+prohibits making Competition Data available to anyone not participating in
+the competition, so it must never be committed to GitHub even in a private
+repo.
+
 ## Current Status
 
-Project setup stage. No modeling has started. Task definition, evaluation
-metric, submission format, dataset structure, timeline, code requirements,
-and efficiency-prize criteria are all confirmed (see above). See
-`notebooks/01_competition_analysis.ipynb` for the full reconnaissance and
-its remaining open questions.
+`01_competition_analysis.ipynb` (documentation reconnaissance) and
+`02_data_exploration.ipynb` (actual tabular data verification) are both
+complete and executed against real data. No modeling has started, no `src/`
+code exists yet. Next milestone: `03_dicom_exploration.ipynb`.
 
-## Open Questions (must resolve before Stage 3 / baseline work)
+## Open Questions
 
 - [x] Exact evaluation metric definition
 - [x] Task definition and submission format
 - [x] Dataset file structure (studies/series/DICOM hierarchy, metadata
-      fields)
-- [x] Label source and coverage (confirmed as weak-supervision shaped;
-      exact counts still to be measured)
+      fields) — schema confirmed; actual DICOM files not yet inspected
+- [x] Label source and coverage — **confirmed with exact numbers**: 58/4,407
+      (1.3%) directly labeled, 4,349 report-only, zero partial
 - [x] Whether report text is available at inference — confirmed: no,
       training-time only
 - [x] Final-submission deadline and rules (code-competition constraints,
       internet access, runtime limits, external pretrained model policy)
 - [x] Efficiency-prize evaluation criteria
-- [x] Data-security constraints on report text — confirmed present (Section
-      2.4.b), interpretation not host-clarified; treating conservatively
-      (no hosted LLM APIs on report text)
-- [ ] Whether a study = one knee (circumstantial evidence, not explicit)
-- [ ] Whether patient- or site-level leakage is possible and how the
-      official train/test split is structured
+- [x] Data-security constraints on report text — identified (Section
+      2.4.b), interpretation not host-confirmed, treating conservatively
+- [x] Tabular ID/join integrity — confirmed clean: zero duplicates, zero
+      orphans, zero train/test overlap
+- [x] Whether every study has all 3 anatomical planes — confirmed: yes,
+      all 4,407 studies
+- [ ] Whether a study = one knee — weak circumstantial evidence from report
+      text (single-knee language, rare "both knees" mentions), not
+      confirmed; requires DICOM inspection
+- [ ] Whether patient- or site-level leakage is possible — **confirmed
+      that no grouping variable exists in the tabular data**; whether one
+      exists in DICOM headers is unresolved and is now a blocking
+      dependency for validation-strategy design
 
 These should be answered directly from the official competition pages and
 the actual downloaded data — not from secondary sources.
