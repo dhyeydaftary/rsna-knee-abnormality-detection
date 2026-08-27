@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data
+data/
+*.dcm
+*.parquet
+*.h5
+*.npy
+*.npz
+
+# Model artifacts
+models/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Experiment outputs
+outputs/
+results/
+runs/
+wandb/
+mlruns/
+
+# Kaggle credentials
+kaggle.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log

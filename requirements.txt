@@ -1,0 +1,11 @@
+# Exploration-stage dependencies only.
+# Modeling/training dependencies (torch, timm, etc.) will be added once
+# the baseline architecture is decided (Stage 3), to avoid pinning
+# unused packages prematurely.
+
+pandas
+numpy
+matplotlib
+seaborn
+pydicom
+jupyter
