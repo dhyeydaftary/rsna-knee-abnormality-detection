@@ -22,14 +22,11 @@ unless there is a genuine technical reason.
 - Metric: macro-averaged ROC-AUC across the twelve targets —
   Final Score = (1/12) * sum(AUC_i).
 - Submission file: CSV with header, `StudyInstanceUID` + 12 confidence-score
-  columns (values in [0, 1]).
-- Prize structure includes a separate efficiency track (own evaluation
-  criteria, not yet pulled into this doc).
+  columns (values in [0, 1]); must be named `submission.csv`.
 - **Training is multimodal (image + report text); inference is image-only.**
   The `Report` field is explicitly withheld at test time, so any use of
   report text is limited to training-time label derivation/weak
   supervision — it cannot be a runtime model input.
-- Timeline and exact rules: still pending — see Open Questions.
 
 ## Dataset Structure (confirmed from the official data description, 27 Aug 2026)
 
@@ -44,16 +41,18 @@ unless there is a genuine technical reason.
   `train_series/<StudyInstanceUID>/<SeriesInstanceUID>/<SOPInstanceUID>.dcm`,
   one slice per file. Series typically have 20–45 slices (median 30), long
   tail out to a few hundred.
-- **`test.csv`** — ~1,300 studies at scoring time; example file currently
-  has 3. `StudyInstanceUID` only — **no `Report` field.**
+- **`test.csv`** — ~1,300 studies at scoring time; example file has 3.
+  `StudyInstanceUID` only — **no `Report` field.**
 - **`test_series.csv` / `test_series/`** — same schema as train, swapped
   for real data during scoring.
-- **`sample_submission.csv`** — all label columns set to 0.5.
-- **Label coverage (confirmed, exact numbers still unverified):** only a
-  small subset of training studies carry direct per-condition labels; the
-  rest have only a report, from which labels may need to be derived. This
-  is a weak-supervision problem, not plain supervised multilabel
-  classification.
+- **`sample_submission.csv`** — all label columns set to 0.5. Verified
+  against an actual copy: 13 columns, header and order match exactly,
+  `StudyInstanceUID` values are genuine DICOM UIDs.
+- **Label coverage:** only a small subset of training studies carry direct
+  per-condition labels; the rest have only a report, from which labels may
+  need to be derived. This is a weak-supervision problem, not plain
+  supervised multilabel classification. Exact counts still to be measured
+  from our own copy of `train.csv`.
 - **Distribution shift risk:** abnormality prevalence is not guaranteed to
   be the same across train, public leaderboard, and final evaluation sets —
   relevant to validation-strategy design.
@@ -69,6 +68,37 @@ no laterality field in `train_series.csv`. The absence of a laterality
 column is circumstantial evidence that each study represents a single knee,
 but this has not been explicitly confirmed — check by inspecting a handful
 of actual studies.
+
+## Rules and Constraints (confirmed, 27 Aug 2026)
+
+- **Timeline:** start Jul 30, 2026 · entry/team-merge deadline Oct 15, 2026
+  · final submission deadline Oct 22, 2026 · winners' requirement deadline
+  Nov 5, 2026. All 11:59 PM UTC; organizers may adjust.
+- **Code Requirements (submissions are code competitions):**
+  - Submitted via Notebook, ≤9 hours runtime (CPU or GPU).
+  - Internet access disabled at submission time.
+  - Freely & publicly available external data and pretrained models are
+    allowed.
+  - Output must be named `submission.csv`.
+- **Prizes:** Main Leaderboard — 10 places, $5,000–$9,000 each. Efficiency
+  Track — 3 places, $5,000–$7,000 each. A submission can win both tracks.
+- **Efficiency Prize eligibility:** must be a selected (or auto-selected)
+  submission, and must beat the `sample_submission.csv` benchmark on the
+  Private Leaderboard.
+- **Efficiency score** (lower is better):
+  `Efficiency = AUC / (Benchmark − max AUC) + RuntimeSeconds / 32400`
+  where `Benchmark` = sample_submission.csv's AUC, `max AUC` = best Private
+  LB AUC across all submissions, `RuntimeSeconds` = this submission's own
+  eval runtime, `32400` = 9h runtime cap in seconds. A public Efficiency
+  Leaderboard (rank only, updated daily on a public notebook) is visible
+  during the competition; full scores appear on the private leaderboard
+  after the competition ends.
+- **Winners' Obligations (beyond standard Kaggle terms):** a short video of
+  the approach, publishing code + model weights publicly on the competition
+  forum, and making the final model publicly available for open
+  distribution/validation. Relevant to keep in mind for code hygiene from
+  the start (no leaked credentials/PII, license-compatible dependencies),
+  in case of placing.
 
 ## Development Philosophy
 
@@ -96,7 +126,9 @@ of actual studies.
   large-scale GPU training, inference, and submission generation, since the
   data lives there and doesn't need to be downloaded locally. Repo code is
   committed to GitHub first, then imported or copied into the hosted
-  notebook, which acts mainly as an execution layer.
+  notebook, which acts mainly as an execution layer. Final submission
+  itself must run as a code-competition Notebook per the Code Requirements
+  above (≤9h, no internet).
 - **Google Colab** — secondary GPU environment for prototyping and
   temporary experiments when the primary hosted GPUs aren't available. Not
   the primary home of the project; useful code moves back into the repo.
@@ -112,9 +144,10 @@ of actual studies.
 ## Current Status
 
 Project setup stage. No modeling has started. Task definition, evaluation
-metric, submission format, and dataset file structure are all confirmed
-(see above). See `notebooks/01_competition_analysis.ipynb` for the full
-reconnaissance and its remaining open questions.
+metric, submission format, dataset structure, timeline, code requirements,
+and efficiency-prize criteria are all confirmed (see above). See
+`notebooks/01_competition_analysis.ipynb` for the full reconnaissance and
+its remaining open questions.
 
 ## Open Questions (must resolve before Stage 3 / baseline work)
 
@@ -123,15 +156,13 @@ reconnaissance and its remaining open questions.
 - [x] Dataset file structure (studies/series/DICOM hierarchy, metadata
       fields)
 - [x] Label source and coverage (confirmed as weak-supervision shaped;
-      exact counts still to be measured from the actual `train.csv`)
+      exact counts still to be measured)
 - [x] Whether report text is available at inference — confirmed: no,
       training-time only
-- [ ] Exact final-submission deadline and rules (code-competition
-      constraints, internet access, runtime limits, external pretrained
-      model policy)
-- [ ] Efficiency-prize evaluation criteria (separate from main track)
-- [ ] Whether a study = one knee (circumstantial evidence yes, not
-      explicit)
+- [x] Final-submission deadline and rules (code-competition constraints,
+      internet access, runtime limits, external pretrained model policy)
+- [x] Efficiency-prize evaluation criteria
+- [ ] Whether a study = one knee (circumstantial evidence, not explicit)
 - [ ] Whether patient- or site-level leakage is possible and how the
       official train/test split is structured
 
