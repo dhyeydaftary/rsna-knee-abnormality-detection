@@ -78,8 +78,29 @@ of actual studies.
   - Submitted via Notebook, ≤9 hours runtime (CPU or GPU).
   - Internet access disabled at submission time.
   - Freely & publicly available external data and pretrained models are
-    allowed.
+    allowed (must meet a "Reasonableness Standard" — equally accessible to
+    all participants, minimal/no cost).
   - Output must be named `submission.csv`.
+- **Team & submission limits:** max team size 5; max 5 submissions/day; up
+  to 2 Final Submissions selected for judging.
+- **Data Security (Official Rules, Section 2.4.b) — important, affects
+  architecture:** Competition Data (including report text) must not be
+  transmitted or made available to any party not participating in the
+  competition. This plausibly prohibits sending report text to third-party
+  hosted LLM APIs (OpenAI, Anthropic, Google, etc.), since the API provider
+  is not a competition participant. **Working assumption: do not send
+  report text to hosted LLM APIs; use local/open-weight models (run
+  in-notebook or self-hosted) for any report-derived label or weak-
+  supervision work instead.** This has not been explicitly ruled on by the
+  host — revisit if clarified via the discussion forum.
+- **Licensing (two separate things — don't conflate):**
+  - Competition *data* may be used for commercial or non-commercial
+    purposes, including academic research, subject to RSNA's MIRA license.
+  - If you place as a winner, your *solution's* code/model must be released
+    under CC-BY-NC 4.0 (non-commercial), plus full training/inference code,
+    weights (as a public dataset), and reproducibility documentation.
+- **Code sharing:** no private sharing of competition code outside your
+  team; public sharing only via Kaggle's own forums/notebooks.
 - **Prizes:** Main Leaderboard — 10 places, $5,000–$9,000 each. Efficiency
   Track — 3 places, $5,000–$7,000 each. A submission can win both tracks.
 - **Efficiency Prize eligibility:** must be a selected (or auto-selected)
@@ -93,8 +114,8 @@ of actual studies.
   Leaderboard (rank only, updated daily on a public notebook) is visible
   during the competition; full scores appear on the private leaderboard
   after the competition ends.
-- **Winners' Obligations (beyond standard Kaggle terms):** a short video of
-  the approach, publishing code + model weights publicly on the competition
+- **Winners' Obligations (beyond standard terms):** a short video of the
+  approach, publishing code + model weights publicly on the competition
   forum, and making the final model publicly available for open
   distribution/validation. Relevant to keep in mind for code hygiene from
   the start (no leaked credentials/PII, license-compatible dependencies),
@@ -162,6 +183,9 @@ its remaining open questions.
 - [x] Final-submission deadline and rules (code-competition constraints,
       internet access, runtime limits, external pretrained model policy)
 - [x] Efficiency-prize evaluation criteria
+- [x] Data-security constraints on report text — confirmed present (Section
+      2.4.b), interpretation not host-clarified; treating conservatively
+      (no hosted LLM APIs on report text)
 - [ ] Whether a study = one knee (circumstantial evidence, not explicit)
 - [ ] Whether patient- or site-level leakage is possible and how the
       official train/test split is structured
