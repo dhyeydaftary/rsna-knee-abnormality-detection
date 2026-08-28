@@ -41,8 +41,9 @@ unless there is a genuine technical reason.
 - **`train_series/`** — DICOMs at
   `train_series/<StudyInstanceUID>/<SeriesInstanceUID>/<SOPInstanceUID>.dcm`,
   one slice per file. Series typically have 20–45 slices (median 30), long
-  tail out to a few hundred. **Not yet inspected directly** — pending
-  `03_dicom_exploration.ipynb`.
+  tail out to a few hundred. **Now inspected directly via
+  `03_dicom_exploration.ipynb`** — see the new DICOM Exploration Findings
+  section below.
 - **`test.csv`** — ~1,300 studies at scoring time; example file currently
   has 3, no `Report` field. Zero overlap with training `StudyInstanceUID`s.
 - **`test_series.csv` / `test_series/`** — same schema as train (schema
@@ -76,36 +77,94 @@ unless there is a genuine technical reason.
 - **Distribution shift risk:** abnormality prevalence is not guaranteed to
   be the same across train, public leaderboard, and final evaluation sets —
   relevant to validation-strategy design.
-- **DICOM notes (from documentation, not yet directly verified):**
-  intensities, orientations, and resolutions vary across series/studies.
-  Transfer syntaxes vary (uncompressed Explicit VR LE, JPEG Lossless, JPEG
-  2000, Implicit VR LE) — the DICOM reader needs `pylibjpeg`/`gdcm`-level
-  decompression support, not just plain `pydicom`. Metadata has been
-  stripped to an allowlisted set of 86 tags.
+- **DICOM notes:** intensities, orientations, and resolutions vary across
+  series/studies (confirmed by direct inspection — see below). Transfer
+  syntaxes were documented to vary (uncompressed Explicit VR LE, JPEG
+  Lossless, JPEG 2000, Implicit VR LE); only Explicit VR LE was observed in
+  the 9-study DICOM sample so far, so keep `pylibjpeg`/`gdcm` decoder
+  dependencies regardless — plain `pydicom` alone is not confirmed
+  sufficient dataset-wide. Metadata has been stripped to an allowlisted set
+  of 86 tags.
 
-**Open sub-question on task framing:** three targets (Medial OA, Lateral OA,
-PF OA) are laterality-specific by name; the other nine are not, and there is
-no laterality field in `train_series.csv`. Report-text spot-checks show
-explicit single-knee language (e.g. "MRI of left Knee," German "Rechts" =
-right) in a minority of reports, and only 15 of 4,407 reports mention both
-"left" and "right" — weak circumstantial evidence toward "each study = one
-knee," but not confirmed. Requires DICOM-level inspection.
+**Task-framing question — now substantially resolved, see DICOM findings
+below:** three targets (Medial OA, Lateral OA, PF OA) are laterality-
+specific by name; the other nine are not. Direct DICOM inspection (not just
+report-text inference) now provides real evidence on this — see
+"DICOM Exploration Findings."
 
-## Validation Feasibility (confirmed via `notebooks/02_data_exploration.ipynb`, 27 Aug 2026)
+## DICOM Exploration Findings (confirmed via `notebooks/03_dicom_exploration.ipynb`, full 4,407-study scan, 27 Aug 2026)
 
-**No patient, site, institution, or scanner identifier column exists in any
-of the five tabular files** — confirmed by an exhaustive column-name search
-across `train.csv`, `train_series.csv`, `test.csv`, `test_series.csv`, and
-`sample_submission.csv`. `StudyInstanceUID` is the only available grouping
-key in the tabular data. Whether the same patient can appear across
-multiple studies cannot currently be determined.
+**Patient / grouping key — resolved.** `PatientID` exists in DICOM headers
+(absent from the tabular CSVs). Scanned across all 4,407 training studies:
 
-**This is a hard dependency for `03_dicom_exploration.ipynb`, not an
-optional nice-to-have.** If DICOM headers also carry no patient/site
-identifier (plausible, given the 86-tag metadata allowlist), the project
-will need to explicitly accept an unresolved leakage risk or fall back to
-non-grouped validation — and that limitation should be stated openly in any
-writeup rather than assumed away.
+- `PatientID` present in 4,407/4,407 studies.
+- **4,407 unique patients — exactly one study per patient, zero
+  exceptions.** Verified with zero cross-series inconsistency.
+- **Patient-repeat leakage is not a risk in this dataset.** A random or
+  stratified (non-grouped) validation split is safe with respect to patient
+  repeats specifically. Other leakage vectors (near-duplicate imaging, site
+  clustering) have not been investigated and remain open.
+
+**Laterality — resolved, more nuanced than initially assumed.**
+
+- Laterality tag (`Laterality` DICOM field) coverage: ~50% of studies
+  (2,204/4,407 tagged, 2,203 untagged).
+- **Missingness is manufacturer-determined, not random.** GE MEDICAL
+  SYSTEMS, TOSHIBA, Philips Healthcare, and CANON_MEC (1,185 studies, 26.9%
+  of the dataset) show **0% coverage** — structurally, not by chance.
+  Siemens Healthineers, Siemens, GEHC, FUJIFILM, and Hitachi show
+  **99.9–100% coverage**. SIEMENS/Philips Medical Systems/Philips show
+  partial coverage (38–62%), suggesting site- or protocol-level variation
+  within those vendors. This gap cannot be closed by further sampling — a
+  different source (most plausibly report text) would be needed to recover
+  laterality for the 0%-coverage manufacturers.
+- Of the 2,204 tagged studies: 2,179 have one consistent laterality value
+  across all series; **25 studies show genuine L/R conflict across
+  series**; **1 study is explicitly tagged `B` (bilateral)**.
+- **26 studies total (~0.59% of the dataset) require special handling for
+  target-semantics purposes.** Do not call all 26 "confirmed bilateral" —
+  the 25 conflict cases could represent true bilateral exams, metadata
+  inconsistency, or other artifacts. **Visual verification of these 26 is
+  in progress; final per-study classification not yet complete** (see
+  Current Status / Open Questions).
+- For the remaining ~97.7% of studies (no conflicting evidence, or a single
+  consistent laterality value), treating each study as single-knee is a
+  reasonable working default.
+
+**`BodyPartExamined` — unreliable, documented as a known limitation.**
+Contains many values unrelated to knees (BRAIN, HEART, LIVER, SPINE,
+SHOULDER, ELBOW, WRIST, ANKLE, etc.) across the full-dataset scan. Assessed
+as a common real-world DICOM data-quality issue (the field is often
+inherited from a stale scanner protocol preset rather than corrected by the
+technologist), not evidence of actual non-knee scans in the dataset.
+**Do not use `BodyPartExamined` as a hard filter for study inclusion.**
+
+**Slice ordering — confirmed unreliable from file listing.** Directory/file
+order does not reliably correspond to anatomical slice order in the sampled
+series. Future preprocessing must derive order from `InstanceNumber` where
+fully populated and unique, falling back to `ImagePositionPatient`
+projection otherwise — never from directory/filename order.
+
+**Imaging characteristics (from a 9-study representative sample — not yet
+verified at full-dataset scale):** highly variable image dimensions (17
+distinct Rows×Columns combinations observed, 256×256 up to 960×1280),
+SliceThickness range 0.6–4.0mm, 100% decode success with plain `pydicom` in
+this sample (only Explicit VR Little Endian observed — does not confirm
+compressed syntaxes are absent dataset-wide).
+
+## Validation Feasibility (updated — was tabular-only, now includes DICOM findings, 27 Aug 2026)
+
+**Tabular data alone (confirmed via `02_data_exploration.ipynb`):** no
+patient, site, institution, or scanner identifier column exists in any of
+the five tabular files.
+
+**DICOM headers (confirmed via `03_dicom_exploration.ipynb`, resolves the
+prior blocking dependency):** `PatientID` exists in DICOM headers and was
+scanned across the full dataset. **Patient-repeat leakage is not a risk —
+patient-grouped validation is not required for this specific concern.** The
+validation-strategy blocker noted previously is now closed. Remaining
+validation-design work (fold structure, handling the 58-study labeled
+subset, per-target stratification) is scoped to the next milestone.
 
 ## Rules and Constraints (confirmed, 27 Aug 2026)
 
@@ -187,7 +246,9 @@ writeup rather than assumed away.
   committed to GitHub first, then imported or copied into the hosted
   notebook, which acts mainly as an execution layer. Final submission
   itself must run as a code-competition Notebook per the Code Requirements
-  above (≤9h, no internet).
+  above (≤9h, no internet). `03_dicom_exploration.ipynb` was developed and
+  executed here, given the 569.76 GB dataset size makes local download
+  impractical.
 - **Google Colab** — secondary GPU environment for prototyping and
   temporary experiments when the primary hosted GPUs aren't available. Not
   the primary home of the project; useful code moves back into the repo.
@@ -205,7 +266,9 @@ writeup rather than assumed away.
 Competition CSVs live in `data/` at the repo root (`data/train.csv`,
 `data/train_series.csv`, `data/test.csv`, `data/test_series.csv`,
 `data/sample_submission.csv`). DICOM folders (`data/train_series/`,
-`data/test_series/`) go in the same location once downloaded. `data/` is
+`data/test_series/`) go in the same location if downloaded locally — in
+practice, DICOM exploration and any future training run on hosted GPU
+notebooks against the mounted dataset instead, given its size. `data/` is
 gitignored and must stay that way — Section 2.4.b of the official rules
 prohibits making Competition Data available to anyone not participating in
 the competition, so it must never be committed to GitHub even in a private
@@ -214,17 +277,23 @@ repo.
 ## Current Status
 
 `01_competition_analysis.ipynb` (documentation reconnaissance) and
-`02_data_exploration.ipynb` (actual tabular data verification) are both
-complete and executed against real data. No modeling has started, no `src/`
-code exists yet. Next milestone: `03_dicom_exploration.ipynb`.
+`02_data_exploration.ipynb` (actual tabular data verification) are complete
+and executed against real data. `03_dicom_exploration.ipynb` is executed
+against the full 4,407-study dataset and nearly complete — patient/grouping
+and laterality/manufacturer findings are fully resolved; the final step
+(visual verification and classification of the 26 laterality-exception
+studies) is in progress. No modeling has started, no `src/` code exists
+yet. Next milestone after DICOM exploration closes: **Validation Strategy**
+— designing a trustworthy local validation approach for a 12-target
+multilabel problem with only 58 directly labeled studies.
 
 ## Open Questions
 
 - [x] Exact evaluation metric definition
 - [x] Task definition and submission format
 - [x] Dataset file structure (studies/series/DICOM hierarchy, metadata
-      fields) — schema confirmed; actual DICOM files not yet inspected
-- [x] Label source and coverage — **confirmed with exact numbers**: 58/4,407
+      fields) — confirmed via direct DICOM inspection
+- [x] Label source and coverage — confirmed with exact numbers: 58/4,407
       (1.3%) directly labeled, 4,349 report-only, zero partial
 - [x] Whether report text is available at inference — confirmed: no,
       training-time only
@@ -237,13 +306,20 @@ code exists yet. Next milestone: `03_dicom_exploration.ipynb`.
       orphans, zero train/test overlap
 - [x] Whether every study has all 3 anatomical planes — confirmed: yes,
       all 4,407 studies
-- [ ] Whether a study = one knee — weak circumstantial evidence from report
-      text (single-knee language, rare "both knees" mentions), not
-      confirmed; requires DICOM inspection
-- [ ] Whether patient- or site-level leakage is possible — **confirmed
-      that no grouping variable exists in the tabular data**; whether one
-      exists in DICOM headers is unresolved and is now a blocking
-      dependency for validation-strategy design
+- [x] Whether patient-level leakage is a risk — **confirmed NOT a risk**:
+      4,407 unique patients, exactly one study each, verified at full
+      dataset scale via DICOM `PatientID`
+- [x] Whether a study = one knee — **substantially resolved**: ~97.7% of
+      studies show no conflicting laterality evidence; 26 studies (~0.59%)
+      require individual handling
+- [ ] Final classification of the 26 laterality-exception studies (clearly
+      unilateral / clearly bilateral / metadata artifact / ambiguous) —
+      visual verification in progress, blocks closing Milestone 1C
+- [ ] Whether compressed transfer syntaxes (JPEG Lossless, JPEG 2000) occur
+      anywhere in the full dataset — only Explicit VR LE observed so far,
+      in a 9-study sample
+- [ ] Whether site-level leakage (beyond patient repeats) or near-duplicate
+      imaging pose a risk — not yet investigated
 
 These should be answered directly from the official competition pages and
 the actual downloaded data — not from secondary sources.
